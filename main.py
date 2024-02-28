@@ -1,12 +1,12 @@
 import telebot
 from fastapi import FastAPI, Request
-from config import TOKEN2
+from config import TOKEN
 import time
 import threading
 import random
 import json
 
-bot = telebot.TeleBot(TOKEN2)
+bot = telebot.TeleBot(TOKEN)
 
 app = FastAPI()
 
