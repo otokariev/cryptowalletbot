@@ -1,5 +1,5 @@
 import telebot
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from config import TOKEN
 import time
 import threading
@@ -10,7 +10,7 @@ bot = telebot.TeleBot(TOKEN)
 
 app = FastAPI()
 
-URL = ('https://cryptowalletbot.onrender.com/' +
+URL = ('https://englishteacherbot.onrender.com/' +
        '51b9e4b9cbd872e827c45f9db4a6c002611bd9a2437a4f278066282abc2f3a40')
 
 bot.remove_webhook()
@@ -45,13 +45,31 @@ async def root():
     return {"message": "Welcome to English Teacher Bot"}
 
 
-@bot.message_handler(commands=['word'])
+@app.get('/custom_dictionary')
+async def view_dictionary():
+    try:
+        with open(DICTIONARY, 'r', encoding='utf-8') as file:
+            dictionary_content = json.load(file)
+        return Response(
+            content=json.dumps(dictionary_content, ensure_ascii=False, indent=4),
+            media_type="application/json"
+        )
+    except FileNotFoundError:
+        return Response(content="Dictionary file not found.", status_code=404)
+
+
+def verify_message(message):
+    if message.content_type == 'text' and not message.text.startswith('/'):
+        return message
+    return ''
+
+
+@bot.message_handler(commands=['words'])
 def view_words(message):
     if dictionary:
-        words_list = "\n".join([f"{word}: {translation}" for word, translation in dictionary.items()])
+        words_list = "\n".join([f"{word}: {translation}" for word, translation in list(dictionary.items())[-50:]])
         bot.send_message(message.chat.id,
-                         f'List of word with translations:\n\n{words_list}\n\n'
-                         'Back to menu /menu 📋')
+                         f'List of words with translations:\n\n{words_list}\n\nBack to dev menu ⭐ /dev ⭐')
     else:
         bot.send_message(message.chat.id, "The dictionary is empty!")
 
@@ -63,25 +81,48 @@ def add_word(message):
 
 
 def check_word(message):
-    word = message.text.strip().upper()
+    verified_word = verify_message(message)
+    word = verified_word.text.strip().upper()
     if word in dictionary:
         bot.send_message(message.chat.id,
                          f" ❌ The word '{word}' already exists in the dictionary ❌\n"
-                         "Back to menu ⭐ /menu ⭐")
+                         "Back to dev menu ⭐ /dev ⭐")
     else:
         bot.send_message(message.chat.id, f"Please enter the translation for the word '{word}':")
         bot.register_next_step_handler(message, get_translation, word)
 
 
 def get_translation(message, word):
-    translation = message.text.strip().upper()
+    verified_message = verify_message(message)
+    translation = verified_message.text.strip().upper()
     dictionary[word] = translation
     bot.send_message(message.chat.id,
                      f'The word "{word}" with translation "{translation}" has been added successfully!\n'
-                     f'Back to menu ⭐ /menu ⭐')
+                     f'Back to dev menu ⭐ /dev ⭐')
 
     with open(DICTIONARY, "w", encoding="utf-8") as file:
         json.dump(dictionary, file, ensure_ascii=False, indent=4)
+
+
+@bot.message_handler(commands=['delete'])
+def delete_word(message):
+    bot.send_message(message.chat.id, "Please enter the word you want to delete:")
+    bot.register_next_step_handler(message, check_delete_word)
+
+
+def check_delete_word(message):
+    verified_message = verify_message(message)
+    word_to_delete = verified_message.text.strip().upper()
+    if word_to_delete in dictionary:
+        del dictionary[word_to_delete]
+        with open(DICTIONARY, "w", encoding="utf-8") as file:
+            json.dump(dictionary, file, ensure_ascii=False, indent=4)
+        bot.send_message(message.chat.id,
+                         f"The word '{word_to_delete}' has been successfully deleted from the dictionary.\n"
+                         f"Back to dev menu ⭐ /dev ⭐")
+    else:
+        bot.send_message(message.chat.id, f" ❌ The word '{word_to_delete}' doesn't exist in the dictionary ❌\n"
+                                          "Back to dev menu ⭐ /dev ⭐")
 
 
 @bot.message_handler(commands=['top'])
@@ -134,16 +175,24 @@ def get_menu(message):
     bot.send_message(message.chat.id,
                      f'Welcome to bot menu 🇬🇧\n\n'
                      '🚀 Start is here 👉 /play 👈\n'
-                     '🥇 Check the score 👉 /top 👈\n'
-                     '📌 Add new word 👉 /add 👈\n')  # 'To check all word press /word 🔡'
+                     '🥇 Check the score 👉 /top 👈\n')
+
+
+@bot.message_handler(commands=['dev'])
+def get_dev(message):
+    bot.send_message(message.chat.id,
+                     f'Welcome to dev menu 🛠\n\n'
+                     '📌 Add new word 👉 /add 👈\n'
+                     '♻ Delete the word 👉 /delete 👈\n'
+                     '📋 Last 50 words 👉 /words 👈\n')
 
 
 @bot.message_handler(commands=['start'])
 def hello(message):
     bot.send_message(message.chat.id,
                      'Hello! 😎\nI am a English teacher bot 🇬🇧\n'
-                     'If you want to learn some new word,\njust press /play and try me 😉\n'
-                     'Back to menu ⭐ /menu ⭐')
+                     'If you want to learn some new words,\njust press /play and try me 😉\n'
+                     'Bot menu: ⭐ /menu ⭐')
 
 
 @bot.message_handler(commands=['play'])
@@ -203,7 +252,8 @@ def run_timeout(message, word):
 
 
 def continue_game(message):
-    if message.text.lower() == 'y':
+    verified_message = verify_message(message)
+    if verified_message.text.lower() == 'y':
         start_game(message)
     else:
         bot.send_message(message.chat.id,
@@ -215,8 +265,9 @@ def check_translation(message, word):
     global hint1, hint2, hint3, timeout, game
 
     if game:
-        translation = message.text.strip().lower()
-        if translation == dictionary[word].lower():
+        translation = verify_message(message)
+        if translation.text.strip().lower() == dictionary[word].lower():
+
             bot.send_message(message.chat.id, "🎯 Exactly! 🎯")
 
             update_user_score(message)
@@ -227,7 +278,7 @@ def check_translation(message, word):
             timeout.cancel()
 
             game = False
-            time.sleep(1)
+            time.sleep(3)
             bot.send_message(message.chat.id,
                              "😎 Another word?\n"
                              "✅ Enter 'y'\n")
